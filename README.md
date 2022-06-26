@@ -1,11 +1,11 @@
 # PSwizget
-PowerShell script that allow you to manage upgrade process with winget. 
-It's adds a few more options than 'winget upgrade --all':
-- create file with packages you would like to omit
-- add or remove packages from toSkip file direcly from the script
-- automaticaly omit packages with "unknown" installed version or when installed version and avaliable version does not match
-- it tries to gues right installed version by reading pattern from avaliable version
-- manually edit upgrade quene
+PowerShell script that allow you to manage the upgrade process with winget. 
+It adds a few more options than 'winget upgrade --all':
+- create a file with the packages you would like to omit
+- add or remove packages from toSkip file directly from the script
+- automatically omit packages with "unknown" installed version, or when the installed version and the available version does not match
+- it tries to guess the correct installed version by reading the pattern from the available version
+- manually edit the upgrade queue
 
 This is my first powershell script for educational purposes.
 

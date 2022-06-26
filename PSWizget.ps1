@@ -2,15 +2,15 @@
 function Split-Result {
     <#
     .SYNOPSIS
-        Split 'winget upgrade' result into the three arrays: okList, noList, unknownVer
+        Split the 'winget upgrade' result into three arrays: okList, noList, unknownVer
 
     .DESCRIPTION
-        Split 'winget upgrade' result into the three groups: skippable (noList), 
-        unrecognizable (unknownList) and upgradable (okList) ones. 
-        Also try to properly recognize packoges with wrong installed version format.
+        Split the 'winget upgrade' result into three groups: skippable (noList), 
+        unrecognizable (unknownList) and upgradeable (okList) ones. 
+        Also tries to correctly recognize packages with an incorrect format of the installed version.
 
         These objects must be defined in the script before calling this function:
-        $upgradeList collection, with Package object with Name, ID, Version, AvaliableVersion
+        $upgradeList collection, with Package object with Name, ID, Version, AvailableVersion
         $toSkip array with packages IDs
     #>
     $okList = @()
@@ -39,7 +39,7 @@ function Split-Result {
                     } else { $okList += $package }
                 } else { $unknownVer += $package }
             } else {
-                Write-Host "Installed $($package.Version.Length) and avaliable version $(
+                Write-Host "Installed $($package.Version.Length) and available version $(
                             $package.AvailableVersion.Length) formats for package $(
                             $package.Name) are different."
                 $unknownList += $package
@@ -52,19 +52,19 @@ function Split-Result {
 function Get-Answer {
     <#
     .SYNOPSIS
-        Wait for host input for specified amount of time.
+        Wait for user input for specified amount of time.
 
     .DESCRIPTION
-        Wait for host input for specified amount of time. Delay is an integer and it is in 0.1s. 
-        By defaul it's 50, so it is ~5s. It takes only one read of a Key. After the delay function
+        Wait for user input for specified amount of time. The delay is an integer and amounts to 0.1s. 
+        By default it's 50, so ~5s. It only takes one key ready. After the delay, function
         returns False.
 
     .EXAMPLE
         Get-Answer -Delay 100
-        wait 10 seconds for host input, return single key object or false if no input entered
+        wait 10 seconds for user input, return single key object or false if no input has been entered
 
     .PARAMETER Delay
-        Time to wait until returning False in 0.1s.
+        Waiting time for the function to return False expressed in 0.1s.
         
     .NOTES
         Code by Every Villain Is Lemons
@@ -92,9 +92,9 @@ function Show-PackagesStatus {
         Show packages from array and message about their status
 
     .DESCRIPTION
-        Show packages status, that means an array where the package was moved by 
+        Show the status of packages, that means an array to which the package has been moved by 
         Split-Result function.
-        It's shows in the following manner: "Package/s <array> is/are <message>" or "<message>" 
+        It's displayed as follows: "Package/s <array> is/are <message>" or "<message>" 
         if list is empty.
     
     .EXAMPLE
@@ -105,10 +105,10 @@ function Show-PackagesStatus {
         Array with list of packages of the same status.
 
     .PARAMETER secondHalf
-        String that is shown after list of packages. It's a status description.
+        The string displayed after the package list. It's a status description.
 
     .PARAMETER emptyMessage
-        String shown if packages array is empty
+        The string displayed if the package array is empty
     #>
 
     param(
@@ -133,16 +133,16 @@ function Show-PackagesStatus {
 function Get-IntAnswer {
     <#
     .SYNOPSIS
-        Get from host numbers of presented options. Host input must be integers separated with 
+        Get selected numbers from the options presented to the user. User input must be integers separated by 
         spaces.
 
     .DESCRIPTION
-        Get from host numbers of presented options. Options are packages that can be manipulated. 
-        Host input must be integers separated with spaces, any other input will be rejected 
+        Get selected numbers from the options presented to the user. Options are packages that can be manipulated. 
+        User input must be integers separated by spaces, any other input will be rejected 
         by function.
 
         This object must be defined in the script before calling this function:
-        $optionList collection of Package objects with Name, ID, Version, AvaliableVersion
+        $optionList collection of Package objects with Name, ID, Version, AvailableVersion
     #>
     $i = 0
     foreach ( $package in $optionsList ) {
@@ -166,8 +166,8 @@ function Get-IntAnswer {
             $wrongInput = [boolean]$wrongInput
         }
         if ( $wrongInput -eq $true ) {
-            $hostSelection = Read-Host "Don't be silly! Only mentioned numbers seperated $(
-                                        )with space! Please select"
+            $hostSelection = Read-Host "Don't be silly! Only mentioned numbers separated $(
+                                        )by a space! Please select"
         }
     } while ( $wrongInput -eq $true )
     return $hostArray
@@ -176,8 +176,8 @@ function Get-IntAnswer {
 function Show-Result {
     <#
     .DESCRIPTION
-        It using function Show-PackagesStatus to return all needed in this script messages 
-        at once. It takes all needed parameters from a script scope.
+        It uses the Show-PackagesStatus function to return all the messages needed in this script 
+        at once.
     #>
     $unknownPackages = Show-PackagesStatus -packagesArray $unknownVer `
     -secondHalf $Script:unknownVerMessage
@@ -206,10 +206,10 @@ $($noPackages)
 $($okPackages)
 ------------------------------------------------------
 [B]      Add the package Id to the toSkip file
-[W]      Remove the package Id from the toSkip file
+[W]      Remove package Id from file toSkip
 [A]      Add the excluded packages to the update queue
-[S]      Skip package in queue only this time
-[C]      Create new custom upgrade quene
+[S]      Only this time, skip the package in the queue 
+[C]      Create a new custom upgrade queue
 ------------------------------------------------------
 Wait 10 sec or press anything else to continue
 ------------------------------------------------------
@@ -222,7 +222,7 @@ switch ( $hostResponse.Character ) {
     'b' {
         $optionsList = $Script:upgradeList | Where-Object {$_ -NotIn $noList}
         if ( !$optionsList ) {
-            Write-Host "There is no packages that may be added to the toSkip file."
+            Write-Host "There are no packages that could be added to the file toSkip."
         } else {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
@@ -235,7 +235,7 @@ switch ( $hostResponse.Character ) {
     'w' {
         $optionsList = $noList
         if ( !$optionsList ) {
-            Write-Host "For now toSkip file is empty"
+            Write-Host "For now, the toSkip file is empty"
         } else {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
@@ -257,19 +257,19 @@ switch ( $hostResponse.Character ) {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
                 $okList += $optionsList[$k - 1]
-                Write-Host "Added $($optionsList.Name[$k -1]) to this upgrade quene."
+                Write-Host "Added $($optionsList.Name[$k -1]) to this upgrade queue."
             }
         }
     }
     's' {
         $optionsList = $okList
         if ( !$optionsList ) {
-            Write-Host "There is no excluded packages"
+            Write-Host "There are no excluded packages"
         } else {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
                 $okList = $oklist | Where-Object {$_ -notin $optionsList[$k - 1]}
-                Write-Host "Removed $($optionsList.Name[$k -1]) from this upgrade quene."
+                Write-Host "Removed $($optionsList.Name[$k -1]) from this upgrade queue."
             }
             if ( $null -eq $okList) { $okList = @() }
         }
@@ -303,7 +303,7 @@ if ( !( Test-Connection 8.8.8.8 -Count 3 -Quiet ) ) {
 }
 #endregion  WINGET AND CONNECTION TEST
 
-#region FETCHING UPGRADABLE PACKAGES
+#region FETCHING UPGRADEABLE PACKAGES
 #       FROM WINGET TO COLLECTION OF OBJECT
 #It's not mine code in this region. I found it on stackoverflow some time ago but can't find it now.
 #Temporory no author, no link
@@ -357,24 +357,24 @@ If ( !$upgradeList ) {
     return
 }
 
-#endregion FETCHING UPGRADABLE PACKAGES
+#endregion FETCHING UPGRADEABLE PACKAGES
 
-#region CREATE AND READ TOSKIP FILE
-#       WITH SAVED LIST OF PACKAGES THAT USER DOESN'T WANT UPGRADE
+#region CREATE AND READ A FILE TOSKIP
+#       WITH A SAVED LIST OF PACKAGES THAT THE USER DOESN'T WANT TO UPGRADE
 $toSkipPath = ".\toSkip.txt"
 if ( !(Test-Path -Path $toSkipPath) ) {
   New-Item -Path $toSkipPath -ItemType file
-  Read-Host -Prompt  "A 'toSkip' file has been created. Add to this file the identifiers of $(
-                     )packages with a different format for 'version' and 'available version'"
+  Read-Host -Prompt  "A 'toSkip' file has been created. Add the IDs of packages $(
+                     )with a different format for 'version' and 'available version' to this file"
 }
-#endregion CREATE AND READ TOSKIP FILE
+#endregion CREATE AND READ A FILE TOSKIP
 
-#region PREPERING MESSAGES ABOUT PACKAGES STATUSES
+#region PREPARING MESSAGES ABOUT PACKAGES STATUSES
 $unknownVerMessage = "recognized incorrectly (installed version info)."
 $noListMessage = "listed in the toSkip file."
 $okListMessage = "going to be updated."
 $emptyListMessage = "There are no packages to upgrade."
-#endregion PREPERING MESSAGES ABOUT PACKAGES STATUSES
+#endregion PREPARING MESSAGES ABOUT PACKAGES STATUSES
 
 #region UI
 $okList, $noList, $unknownVer = @(), @(), @()
@@ -382,17 +382,17 @@ $okList, $noList, $unknownVer = Split-Result
 Show-UI -okList $okList -noList $noList -unknownVer $unknownVer
 #endregion UI
 
-#region UPGRADE BATH OF PACKAGES
+#region UPGRADE A BATCH OF PACKAGES
 Show-PackagesStatus -packagesArray $okList -secondHalf $okListMessage -emptyMessage $emptyListMessage
 if ( $okList ) { Read-Host -Prompt 'Enter to continue, ctrl+c to abort' }
 
 if ( $oklist.Count -gt 0) {
     Read-Host
     foreach ($package in $okList) {
-        Write-Host "Updating $($package.Name) application."
+        Write-Host "Updating the $($package.Name) application."
         & winget upgrade $package.Id -h
     }
 }
 
 Read-Host -Prompt "Finished. Press Enter to close this script"
-#endregion UPGRADE BATH OF PACKAGES
+#endregion UPGRADE A BATCH OF PACKAGES
