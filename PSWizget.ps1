@@ -390,7 +390,7 @@ if ( $oklist.Count -gt 0) {
     Read-Host
     foreach ($package in $okList) {
         Write-Host "Updating $($package.Name) application."
-        & winget upgrade $package.Id
+        & winget upgrade $package.Id -h
     }
 }
 
