@@ -1,4 +1,48 @@
-﻿#region FUNCTIONS
+﻿<#
+.SYNOPSIS
+    PowerShell script that allow you to manage the upgrade process with winget.
+
+.DESCRIPTION
+    PowerShell script that allow you to manage the upgrade process with winget. 
+    It adds a few more options than 'winget upgrade --all':
+    - create a file with the packages you would like to omit
+    - add or remove packages from toSkip file directly from the script
+    - automatically omit packages with "unknown" installed version, or when the 
+      installed version and the available version does not match
+    - it tries to guess the correct installed version by reading the pattern 
+      from the available version
+    - manually edit the upgrade queue
+    - quick mode (it's similar to 'winget upgrade --all' but witha blacklist applied)
+
+.NOTES
+    This is my first powershell script for educational purposes.
+
+.EXAMPLE
+    PS> .PSWizget.ps1
+
+.PARAMETER quick
+    The Script won't ask for any unessentialy input. It will exclude packages blacklisted 
+    or with an unrecognized version and then the update will start.
+
+.INPUTS
+    None. You cannot pipe objects to PSWizget.ps1.
+
+.OUTPUTS
+    None. PSWizget.ps1 does not generate any output.
+
+.LINK
+    Project page https://github.com/Zakret/PSwizget
+
+.FUNCTIONALITY
+    winget batch upgrade wizard update all queue
+
+#>
+
+param (
+    [switch]$quick
+)
+
+#region FUNCTIONS
 function Split-Result {
     <#
     .SYNOPSIS
@@ -16,11 +60,12 @@ function Split-Result {
     $okList = @()
     $noList = @()
     $unknownVer = @()
+    $toSkip = Get-Content $Script:toSkipPath
     foreach ($package in $Script:upgradeList) {
-        if ((Get-Content $Script:toSkipPath) -contains $package.Id) { $noList += $package }
+        if ($toSkip -contains $package.Id) { $noList += $package }
         elseif ($package.Version -contains "Unknown") { $unknownVer += $package }
         elseif ([Math]::Abs($package.Version.Length - $package.AvailableVersion.Length) -gt 1){
-            if ($package.Version.Length - $package.AvailableVersion.Length -gt 0) {
+            if (($package.Version.Length - $package.AvailableVersion.Length -gt 0) -and !$quick) {
                 $versionPattern = $package.AvailableVersion -replace "[a-z]",'[a-z]'
                 $versionPattern = $versionPattern -replace "[0-9]",'[0-9]'
                 $versionPattern = $versionPattern -replace "\.",'\.'
@@ -39,8 +84,8 @@ function Split-Result {
                     } else { $okList += $package }
                 } else { $unknownVer += $package }
             } else {
-                Write-Host "Installed $($package.Version.Length) and available version $(
-                            $package.AvailableVersion.Length) formats for package $(
+                Write-Host "Installed ($($package.Version)) and available version ($(
+                            $package.AvailableVersion)) formats for package $(
                             $package.Name) are different."
                 $unknownList += $package
             }
@@ -190,6 +235,52 @@ function Show-Result {
 
 function Show-UI {
     <#
+    .SYNOPSIS
+        It shows the user all the available options that he can choose to manipulate the Skipt blacklist file
+        or the update queue.
+
+    .DESCRIPTION
+        It shows the user all the available options that he can choose to manipulate the toSkip blacklist file
+        or the update queue. Options available:
+        - Add the package Id to the toSkip file
+        - Remove package Id from file toSkip
+        - Add the excluded packages to the update queue
+        - Only this time, skip the package in the queue 
+        - Create a new custom upgrade queue
+        The function determines which packages are relevant to which option and shows them to the user 
+        as an indexed list. The sser select packages by entering their indexes separated 
+        by spaces.
+        The function has all the mechanisms needed for manipulation.
+
+    .PARAMETER okList
+        an object with packages to be updated
+
+    .PARAMETER noList
+        an object with blacklisted packages to be omitted
+
+    .PARAMETER  unknownVer
+        an object with packages to be omitted due to unrecognized version info
+    .EXAMPLE
+        Show-UI -okList $okList -noList $noList -unknownVer $unknownVer
+        <Table with upgradable packages>
+        ---
+        Packages A, B are recognized incorrectly (installed version info).
+        Package C is listed in the toSkip file.
+        Package D id going to be updated.
+        ---
+        <a list with options indexed with single letters>
+        [A] Option A
+        ---
+        Wait 10 sec or press anything else to continue
+        <User input - only one char read>
+        A
+        <indexed list of packages relevant to selected option>
+        [1] Package B
+        [2] Package D
+        Select the package indexes to which you want to apply the changes (eg. 1 4):
+        <User input - integers seperated by spaces>
+        1 2
+        <Packages B and D are manipulated as indicated by the option>
     #>
 param (
     [ Parameter(Mandatory) ]$okList, 
@@ -222,13 +313,20 @@ switch ( $hostResponse.Character ) {
     'b' {
         $optionsList = $Script:upgradeList | Where-Object {$_ -NotIn $noList}
         if ( !$optionsList ) {
-            Write-Host "There are no packages that could be added to the file toSkip."
+            Write-Host "There are no packages that could be added to the toSkip file."
         } else {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
-                Add-Content -Path $Script:toSkipPath -Value $optionsList.Id[$k -1]
-                $noList += $optionsList[$k-1]
-                Write-Host "Added $($optionsList.Name[$k -1]) to the toSkip file."
+                Add-Content -Path $Script:toSkipPath -Value $optionsList.Id[$k - 1]
+                $toSkip, $noList = @(), @()
+                $toSkip = Get-Content $Script:toSkipPath
+                foreach ($package in $Script:upgradeList) {
+                    if ($toSkip -contains $package.Id) 
+                    { $noList += $package }
+                }
+                $okList = $oklist | Where-Object {$_ -notIn @($optionsList[$k - 1])}
+                if ( $null -eq $okList) { $okList = @() }
+                Write-Host "Added $($optionsList.Name[$k - 1]) to the toSkip file."
             }
         }
     }
@@ -240,65 +338,73 @@ switch ( $hostResponse.Character ) {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
                 Set-Content -Path $Script:toSkipPath -Value (get-content -Path $Script:toSkipPath |
-                Select-String -SimpleMatch $optionsList.Id[$k -1] -NotMatch)
-                $noList = $nolist | Where-Object {$_ -notin $optionsList[$k - 1]}
-                if ( !($optionsList.Version[$k-1] -eq 'unknown') ){
-                    $okList += $optionsList[$k-1]
+                Select-String -SimpleMatch $optionsList.Id[$k - 1] -NotMatch)
+                $noList = $nolist | Where-Object {$_ -notIn @($optionsList[$k - 1])}
+                if ( $null -eq $noList) { $noList = @() }
+                if ( $optionsList.Version[$k - 1] -ne 'Unknown' ){
+                    $okList += @($optionsList[$k - 1])
                 }
-                Write-Host "Removed $($optionsList.Name[$k -1]) from the toSkip file."
+                Write-Host "Removed $($optionsList.Name[$k - 1]) from the toSkip file."
             }   
         }
     }
     'a' {
         $optionsList = $unknownVer + $noList
         if ( !$optionsList ) {
-            Write-Host "There is no excluded packages"
+            Write-Host "There are no excluded packages"
         } else {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
-                $okList += $optionsList[$k - 1]
-                Write-Host "Added $($optionsList.Name[$k -1]) to this upgrade queue."
+                $okList += @($optionsList[$k - 1])
+                Write-Host "Added $($optionsList.Name[$k - 1]) to this upgrade queue."
             }
         }
     }
     's' {
         $optionsList = $okList
         if ( !$optionsList ) {
-            Write-Host "There are no excluded packages"
+            Write-Host "There are no upgradeable packages"
         } else {
             $hostArray = Get-IntAnswer
             foreach ( $k in $hostArray ) {
-                $okList = $oklist | Where-Object {$_ -notin $optionsList[$k - 1]}
-                Write-Host "Removed $($optionsList.Name[$k -1]) from this upgrade queue."
+                $okList = $oklist | Where-Object {$_ -notin @($optionsList[$k - 1])}
+                if ( $null -eq $okList) { $okList = @() }
+                Write-Host "Removed $($optionsList.Name[$k - 1]) from this upgrade queue."
             }
-            if ( $null -eq $okList) { $okList = @() }
         }
     }
     'c' {
         $optionsList = $Script:upgradeList
         $hostArray = Get-IntAnswer
+        $okList = @()
         foreach ($k in $hostArray) {
             $okList += $optionsList[$k - 1]
         }
+        $Script:okListS = $okList
         break
     }
     { $_ -in 'b', 'w', 'a', 's'} { 
-        Get-Answer -Delay 30
+        $Script:key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyUp")
+        Get-Answer -Delay 20 | Out-Null
+        $Script:okListS = $okList
         Show-UI -okList $okList -noList $noList -unknownVer $unknownVer
     }
 }
-$Script:okList = $okList
 }
 #endregion FUNCTIONS
 
+# user input fix - flushing Enter
+$key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyUp")
+
 #region  WINGET AND CONNECTION TEST
+Write-Host 'Please wait...'
 $wingetExist = test-path -path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\winget.exe"
 if ( !$wingetExist ) {
-    Read-Host -Prompt "First please install winget from msstore"
+    Write-Host "First please install winget from msstore"
     return
 }
 if ( !( Test-Connection 8.8.8.8 -Count 3 -Quiet ) ) {
-  Read-Host -Prompt "No internet connection"
+  Write-Host "No internet connection"
   Return
 }
 #endregion  WINGET AND CONNECTION TEST
@@ -307,9 +413,6 @@ if ( !( Test-Connection 8.8.8.8 -Count 3 -Quiet ) ) {
 #       FROM WINGET TO COLLECTION OF OBJECT
 #It's not mine code in this region. I found it on stackoverflow some time ago but can't find it now.
 #Temporory no author, no link
-
-Read-Host -Prompt "Applications will be updated with winget. Press Enter to continue, $(
-                  )Ctrl+c to abort"
 
 class Software {
     [string]$Name
@@ -377,22 +480,26 @@ $emptyListMessage = "There are no packages to upgrade."
 #endregion PREPARING MESSAGES ABOUT PACKAGES STATUSES
 
 #region UI
-$okList, $noList, $unknownVer = @(), @(), @()
-$okList, $noList, $unknownVer = Split-Result
-Show-UI -okList $okList -noList $noList -unknownVer $unknownVer
+$okListS, $noListS, $unknownVerS = @(), @(), @()
+$okListS, $noListS, $unknownVerS = Split-Result
+
+if ( !$quick ) {
+    Clear-Host
+    $upgradeList | Format-Table
+    Show-UI -okList $okListS -noList $noListS -unknownVer $unknownVerS
+}
 #endregion UI
 
 #region UPGRADE A BATCH OF PACKAGES
-Show-PackagesStatus -packagesArray $okList -secondHalf $okListMessage -emptyMessage $emptyListMessage
-if ( $okList ) { Read-Host -Prompt 'Enter to continue, ctrl+c to abort' }
+Show-PackagesStatus -packagesArray $okListS -secondHalf $okListMessage -emptyMessage $emptyListMessage
 
-if ( $oklist.Count -gt 0) {
-    Read-Host
-    foreach ($package in $okList) {
+if ( $oklistS.Count -gt 0) {
+    Read-Host -Prompt 'Enter to continue, ctrl+c to abort'
+    foreach ($package in $okListS) {
         Write-Host "Updating the $($package.Name) application."
         & winget upgrade $package.Id -h
     }
 }
 
-Read-Host -Prompt "Finished. Press Enter to close this script"
+if ( !$quick ) {Read-Host -Prompt "Finished. Press Enter to close this script"}
 #endregion UPGRADE A BATCH OF PACKAGES
