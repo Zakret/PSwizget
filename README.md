@@ -6,7 +6,7 @@ It adds a few more options than 'winget upgrade --all':
 - automatically omit packages with "unknown" installed version, or when the installed version and the available version does not match
 - it tries to guess the correct installed version by reading the pattern from the available version
 - manually edit the upgrade queue
-- quick mode (it's similar to 'winget upgrade --all' but witha blacklist applied)
+- quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied)
 
 This is my first powershell script for educational purposes.
 
