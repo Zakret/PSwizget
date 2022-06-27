@@ -10,4 +10,4 @@ It adds a few more options than 'winget upgrade --all':
 
 This is my first powershell script for educational purposes.
 
-![wizget_screenshot](https://user-images.githubusercontent.com/78523122/175819001-c0ecea78-fdad-4907-9388-e36f0a11d69b.jpg)
+![PSwizget_preview](https://user-images.githubusercontent.com/78523122/176022113-95214442-96f6-4811-9184-b7eea3b71f65.jpg)
