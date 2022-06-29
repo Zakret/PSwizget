@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.0.10
+.VERSION 1.0.11
 
 .GUID acb8f443-01c8-40b3-9369-c5e6e28548d1
 
@@ -10,7 +10,7 @@
 
 .COPYRIGHT GPL-3.0
 
-.TAGS PSEdition_Core windows winget batch upgrade wizard update all queue
+.TAGS PSEdition_Core PSEdition_Desktop windows winget batch upgrade wizard update all queue
 
 .LICENSEURI https://opensource.org/licenses/GPL-3.0
 
@@ -25,11 +25,8 @@
 .EXTERNALSCRIPTDEPENDENCIES
 
 .RELEASENOTES
-- bug fixes
-- colorized output
-- the title bar shows which package is currently being updated
-- better readability
-- added the ability to escape the selected option
+- fixed issue with  Windows Powershell (desktop)
+Long name packages (chars > 30) are still not supported on the desktop edition
 
 .PRIVATEDATA
 
@@ -50,6 +47,13 @@
       from the available version
     - manually edit the upgrade queue
     - quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied)
+    
+    Known issue with Windows Powershell ver. <= 5.1 (desktop):
+    Due to the ascii encoding, packages with longer names than 30 chars may corrupt 
+    the 'winget upgrade' result, i.e. info about the long name package 
+    and the packages listed after it. 
+    Please use this script with PowerShell ver. > 5.1 (core) if you can 
+    or avoid installing long name packages with winget.
 
 .NOTES
     This is my first powershell script for educational purposes.
@@ -157,6 +161,7 @@ function Get-Answer {
     #>
     param( [ Parameter() ] [int]$Delay = 50 )
     $counter = 0    
+    $host.UI.RawUI.FlushInputBuffer()
     while( $counter++ -lt $Delay ) {
         if ( $Host.UI.RawUI.KeyAvailable ) {
             $key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyUp")
@@ -293,14 +298,21 @@ function Write-Separator {
 
     .PARAMETER color
         Line color.
+    .PARAMETER allowMultiLines
+        Don't trim line to the window size
     #>
+
     param (
         [string]$type = '-',
         [int]$number = $host.UI.RawUI.BufferSize.Width,
-        [string]$color = 'Green'
+        [string]$color = 'Green',
+        [switch]$allowMultiLines
     )
 $line = ''
 for ( $i = 0; $i -lt $number; $i ++ ) { $line = $line + $type } 
+if ( !$allowMultiLines -and $line -gt $host.UI.RawUI.BufferSize.Width) {
+    $line = $line.Substring(0,$host.UI.RawUI.BufferSize.Width)
+}
 Write-Host $line -ForegroundColor $color
 }
 
@@ -465,7 +477,6 @@ switch ( $hostResponse.Character ) {
         }
     }
     { $_ -in 'b', 'w', 'a', 's'} { 
-        $host.UI.RawUI.FlushInputBuffer()
         if ( $hostArray ) { Get-Answer -Delay 20 | Out-Null }
         $Script:okListS = $okList
         Show-UI -okList $okList -noList $noList -unknownVer $unknownVer
@@ -476,9 +487,6 @@ switch ( $hostResponse.Character ) {
 
 #region STARTUP
 Write-Host 'Please wait...'
-
-# user input fix - flushing Enter
-$host.UI.RawUI.FlushInputBuffer()
 
 # window configuration
 $host.UI.RawUI.BufferSize.Width = 120;  $host.UI.RawUI.WindowSize.Width = 120
@@ -491,8 +499,15 @@ if ( !$wingetExist ) {
     return
 }
 
+# encoding test
+if( $OutputEncoding.WindowsCodePage -ne 1200 ) {
+    Write-Host "Your Powershell encoding is not utf8. Packages with longer names than 30 chars $(
+               )may corrupt the 'winget upgrade' result." -ForegroundColor Red
+    Write-Host "Powershell encoding : ", $OutputEncoding.HeaderName
+} 
+
 # create and read toSkip blacklist file
-$toSkipPath = ".\toSkip.txt"
+$toSkipPath = "~\toSkip.txt"
 if ( !(Test-Path -Path $toSkipPath) ) {
   New-Item -Path $toSkipPath -ItemType file
   Write-Host
@@ -526,7 +541,8 @@ class Software {
 $upgradeResult = winget upgrade | Out-String
 
 # my fix to this code
-$upgradeResult = $upgradeResult -replace "ÔÇŽ", ' '
+$upgradeResult = $upgradeResult -replace 'ÔÇŽ', ' '
+
 
 $lines = $upgradeResult.Split([Environment]::NewLine)
 
