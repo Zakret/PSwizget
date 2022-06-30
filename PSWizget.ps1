@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.0.12
+.VERSION 1.0.13
 
 .GUID acb8f443-01c8-40b3-9369-c5e6e28548d1
 
@@ -25,8 +25,8 @@
 .EXTERNALSCRIPTDEPENDENCIES
 
 .RELEASENOTES
-    - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default
-    - blacklistPath <Path> option with custom blacklist file location. Default is "~\toSkip.txt"
+    - you can now preselect one of the options avaliable from the menu by adding the Aoption, 
+    Coption or Soption parameter
 
 .PRIVATEDATA
 
@@ -50,6 +50,8 @@
     - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default
     - blacklistPath <Path> option with custom blacklist file location. Default is "~\toSkip.txt".
     It doesn't need to be created beforehand
+    - you can preselect one of the options available from the menu by adding the Aoption, 
+    Coption or Soption parameter
     
     Known issue with Windows Powershell ver. <= 5.1 (desktop):
     Due to the ascii encoding, packages with longer names than 30 chars may corrupt 
@@ -61,16 +63,8 @@
 .NOTES
     This is my first powershell script for educational purposes.
 
-    FUture plans:
-    - Coption option to start with preselected [C] custom queue creation
-    - Aoptionn option to start with preselected [A] package addition
-
 .EXAMPLE
     PS> .PSWizget.ps1
-
-.PARAMETER quick
-    The Script won't ask for any unessentialy input. It will exclude packages blacklisted 
-    or with an unrecognized version and then the update will start.
 
 .INPUTS
     None. You cannot pipe objects to PSWizget.ps1.
@@ -84,12 +78,39 @@
 .FUNCTIONALITY
     winget batch upgrade wizard update all queue
 
+.PARAMETER quick
+    The Script won't ask for any unessentialy input. It will exclude packages blacklisted 
+    or with an unrecognized version and then the update will start.
+
+.PARAMETER blacklistPath
+    Custom blacklist file location. Default is "~\toSkip.txt". 
+    It doesn't need to be created beforehand.
+
+.PARAMETER wingetParam
+    custom parameters to pass to winget. '-h' is set by default.
+
+.PARAMETER Aoption
+    Start with the pre-selected [ C ] custom queue creation.
+
+.PARAMETER Coption
+    Start with the pre-selected [ A ] package addition.
+
+.PARAMETER Soption
+    Start with the pre-selected [ S ] package omission.
+
 #>
 
 param (
     [string]$blacklistPath = "~\toSkip.txt",
     [string]$wingetParam = "-h",
-    [switch]$quick
+    [ parameter(ParameterSetName="set1") ]
+    [switch]$quick,
+    [ parameter(ParameterSetName="set2") ]
+    [switch]$Aoption,
+    [ parameter(ParameterSetName="set3") ]
+    [switch]$Coption,
+    [ parameter(ParameterSetName="set4") ]
+    [switch]$Soption
 )
 
 #region FUNCTIONS
@@ -196,7 +217,6 @@ Press [ Q ] to return to the menu
         $hostArray = $hostSelection.Split(" ")
         $wrongInput = $false
         if ( !$hostArray -or $hostArray -eq 'q') { 
-            $hostArray = $false
             break
         }
         try {
@@ -263,7 +283,7 @@ function Write-PackagesStatus {
         Write-Host " are $($secondHalf)"
     } 
     elseif ( $emptyMessage -ne "" ) {
-        Write-Host $emptyMessage
+        Write-Host $emptyMessage -ForegroundColor Yellow
     }
 }
 #endregion UNIVERSAL FUNCTIONS
@@ -408,16 +428,32 @@ Write-Separator -number 55
 Write-Host "Wait 10 sec or press anything else to continue"
 Write-Separator -number 55
 
-$hostResponse = Get-Answer -Delay 100
+$hostResponse = New-Object -TypeName System.Management.Automation.Host.KeyInfo
+if ( $Aoption ) {
+    Write-Host "Do you want to add one of these packages to the update queue?"
+    $hostResponse.Character = "a"
+    $Aoption = $false
+} elseif ( $Coption ) {
+    Write-Host "Please define the update queue:"
+    $hostResponse.Character = "c"
+    $Coption = $false
+} elseif ( $Soption ) {
+    Write-Host "Do you want to omit any of these packages?"
+    $hostResponse.Character = "s"
+    $Soption = $false
+} else {
+    $hostResponse = Get-Answer -Delay 100
+}
 $optionsList = @()
 switch ( $hostResponse.Character ) {
     'b' {
         $optionsList = $Script:upgradeList | Where-Object {$_ -NotIn $noList}
         if ( !$optionsList ) {
-            Write-Host "There are no packages that could be added to the blacklist file."
+            Write-Host "There are no packages that could be added to the blacklist file."  `
+            -ForegroundColor Yellow
         } else {
             $hostArray = Get-IntAnswer -options $optionsList.Name
-            if ( $hostArray ) {
+            if ( $hostArray -notin @('q', $false ) ) {
                 foreach ( $k in $hostArray ) {
                     Add-Content -Path $Script:blacklistPath -Value $optionsList[$k - 1].Id
                     $toSkip, $noList = @(), @()
@@ -428,7 +464,8 @@ switch ( $hostResponse.Character ) {
                     }
                     $okList = $oklist | Where-Object {$_ -notIn @($optionsList[$k - 1])}
                     if ( $null -eq $okList) { $okList = @() }
-                    Write-Host "Added $($optionsList[$k - 1].Name) to the blacklist file."
+                    Write-Host "Added $($optionsList[$k - 1].Name) to the blacklist file." `
+                    -ForegroundColor Yellow
                 }
             }
         }
@@ -436,19 +473,21 @@ switch ( $hostResponse.Character ) {
     'w' {
         $optionsList = $noList
         if ( !$optionsList ) {
-            Write-Host "For now, the blacklist file is empty"
+            Write-Host "For now, the blacklist file is empty" -ForegroundColor Yellow
         } else {
             $hostArray = Get-IntAnswer -options $optionsList.Name
-            if ( $hostArray ) {
+            if ( $hostArray -notin @('q', $false ) ) {
                 foreach ( $k in $hostArray ) {
-                    Set-Content -Path $Script:blacklistPath -Value (get-content -Path $Script:blacklistPath |
-                    Select-String -SimpleMatch $optionsList[$k - 1].Id -NotMatch)
+                    Set-Content -Path $Script:blacklistPath -Value (get-content `
+                    -Path $Script:blacklistPath | Select-String `
+                    -SimpleMatch $optionsList[$k - 1].Id -NotMatch)
                     $noList = $nolist | Where-Object {$_ -notIn @($optionsList[$k - 1])}
                     if ( $null -eq $noList) { $noList = @() }
                     if ( $optionsList[$k - 1].Version -ne 'Unknown' ){
                         $okList += @($optionsList[$k - 1])
                     }
-                    Write-Host "Removed $($optionsList[$k - 1].Name) from the blacklist file."
+                    Write-Host "Removed $($optionsList[$k - 1].Name) from the blacklist file." `
+                    -ForegroundColor Yellow
                 }   
             }
         }
@@ -456,13 +495,14 @@ switch ( $hostResponse.Character ) {
     'a' {
         $optionsList = $unknownVer + $noList
         if ( !$optionsList ) {
-            Write-Host "There are no excluded packages"
+            Write-Host "There are no excluded packages" -ForegroundColor Yellow
         } else {
             $hostArray = Get-IntAnswer -options $optionsList.Name
-            if ( $hostArray ) {
+            if ( $hostArray -notin @('q', $false ) ) {
                 foreach ( $k in $hostArray ) {
                     $okList += @($optionsList[$k - 1])
-                    Write-Host "Added $($optionsList[$k - 1].Name) to this upgrade queue."
+                    Write-Host "Added $($optionsList[$k - 1].Name) to this upgrade queue." `
+                    -ForegroundColor Yellow
                 }
             }
         }
@@ -470,14 +510,15 @@ switch ( $hostResponse.Character ) {
     's' {
         $optionsList = $okList
         if ( !$optionsList ) {
-            Write-Host "There are no upgradeable packages"
+            Write-Host "There are no upgradeable packages" -ForegroundColor Yellow
         } else {
             $hostArray = Get-IntAnswer -options $optionsList.Name
-            if ( $hostArray ) {
+            if ( $hostArray -notin @('q', $false ) ) {
                 foreach ( $k in $hostArray ) {
                     $okList = $oklist | Where-Object {$_ -notin @($optionsList[$k - 1])}
                     if ( $null -eq $okList) { $okList = @() }
-                    Write-Host "Removed $($optionsList[$k - 1].Name) from this upgrade queue."
+                    Write-Host "Removed $($optionsList[$k - 1].Name) from this upgrade queue." `
+                    -ForegroundColor Yellow
                 }
             }    
         }
@@ -485,17 +526,19 @@ switch ( $hostResponse.Character ) {
     'c' {
         $optionsList = $Script:upgradeList
         $hostArray = Get-IntAnswer -options $optionsList.Name
-        if ( $hostArray ) {
+        if ( $hostArray -ne 'q' ) {
             $okList = @()
-            foreach ($k in $hostArray) {
-                $okList += $optionsList[$k - 1]
+            if ($hostArray -eq $false) {
+                foreach ($k in $hostArray) {
+                    $okList += $optionsList[$k - 1]
+                }
             }
             $Script:okListS = $okList
             break
         }
     }
-    { $_ -in 'b', 'w', 'a', 's'} { 
-        if ( $hostArray ) { Get-Answer -Delay 20 | Out-Null }
+    { $_ -in 'b', 'w', 'a', 's', 'c'} { 
+        if ( $hostArray -notin @('q', $false ) ) { Get-Answer -Delay 20 | Out-Null }
         $Script:okListS = $okList
         Show-UI -okList $okList -noList $noList -unknownVer $unknownVer
     }

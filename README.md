@@ -9,6 +9,7 @@ It adds a few more options than 'winget upgrade --all':
 - quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied)
 - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default
 - blacklistPath <Path> option with custom blacklist file location. Default is "~\toSkip.txt". It doesn't need to be created beforehand
+- you can preselect one of the options available from the menu by adding the Aoption, Coption or Soption parameter
 
 This is my first powershell script for educational purposes.
 
