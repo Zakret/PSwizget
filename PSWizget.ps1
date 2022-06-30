@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.0.11
+.VERSION 1.0.12
 
 .GUID acb8f443-01c8-40b3-9369-c5e6e28548d1
 
@@ -25,8 +25,8 @@
 .EXTERNALSCRIPTDEPENDENCIES
 
 .RELEASENOTES
-- fixed issue with  Windows Powershell (desktop)
-Long name packages (chars > 30) are still not supported on the desktop edition
+    - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default
+    - blacklistPath <Path> option with custom blacklist file location. Default is "~\toSkip.txt"
 
 .PRIVATEDATA
 
@@ -40,13 +40,16 @@ Long name packages (chars > 30) are still not supported on the desktop edition
     PowerShell script that allow you to manage the upgrade process with winget. 
     It adds a few more options than 'winget upgrade --all':
     - create a file with the packages you would like to omit
-    - add or remove packages from toSkip file directly from the script
+    - add or remove packages from the blacklist file directly from the script
     - automatically omit packages with "unknown" installed version, or when the formats of
       the installed version and the available version formatest does not match
     - it tries to guess the correct installed version by reading the pattern 
       from the available version
     - manually edit the upgrade queue
     - quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied)
+    - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default
+    - blacklistPath <Path> option with custom blacklist file location. Default is "~\toSkip.txt".
+    It doesn't need to be created beforehand
     
     Known issue with Windows Powershell ver. <= 5.1 (desktop):
     Due to the ascii encoding, packages with longer names than 30 chars may corrupt 
@@ -57,6 +60,10 @@ Long name packages (chars > 30) are still not supported on the desktop edition
 
 .NOTES
     This is my first powershell script for educational purposes.
+
+    FUture plans:
+    - Coption option to start with preselected [C] custom queue creation
+    - Aoptionn option to start with preselected [A] package addition
 
 .EXAMPLE
     PS> .PSWizget.ps1
@@ -80,61 +87,42 @@ Long name packages (chars > 30) are still not supported on the desktop edition
 #>
 
 param (
+    [string]$blacklistPath = "~\toSkip.txt",
+    [string]$wingetParam = "-h",
     [switch]$quick
 )
 
 #region FUNCTIONS
-function Split-Result {
+#region UNIVERSAL FUNCTIONS
+function Write-Separator {
     <#
-    .SYNOPSIS
-        Split the 'winget upgrade' result into three arrays: okList, noList, unknownVer
-
     .DESCRIPTION
-        Split the 'winget upgrade' result into three groups: skippable (noList), 
-        unrecognizable (unknownList) and upgradeable (okList) ones. 
-        Also tries to correctly recognize packages with an incorrect format of the installed version.
+        Write-Host a colored line made of multipled string.
 
-        These objects must be defined in the script before calling this function:
-        $upgradeList collection, with Package object with Name, ID, Version, AvailableVersion
-        $toSkip array with packages IDs
+    .PARAMETER type
+        The string to be multiplied.
+
+    .PARAMETER number
+        Line length.
+
+    .PARAMETER color
+        Line color.
+    .PARAMETER allowMultiLines
+        Don't trim line to the window size
     #>
-    $Script:upgradeList | ForEach-Object -Begin {
-        $okList = @()
-        $noList = @()
-        $unknownVer = @()
-        $toSkip = Get-Content $Script:toSkipPath
-    } -Process {   
-        if ($toSkip -contains $_.Id) { $noList += $_ }
-        elseif ($_.Version -contains "Unknown") { $unknownVer += $_ }
-        elseif ([Math]::Abs($_.Version.Length - $_.AvailableVersion.Length) -gt 1){
-            if (($_.Version.Length - $_.AvailableVersion.Length -gt 0) -and !$quick) {
-                $versionPattern = $_.AvailableVersion -replace "[a-z]",'[a-z]'
-                $versionPattern = $versionPattern -replace "[0-9]",'[0-9]'
-                $versionPattern = $versionPattern -replace "\.",'\.'
-                $_.Version -match "(?<Version>$($versionPattern))" | Out-Null
-                $hostResponse = Read-Host "Is version '$($Matches.Version)' the correct version$(
-                                        ) of $($_.Name) installed? Available version is '$(
-                                        $_.AvailableVersion)'. [ Y ] for Yes, anything else to skip$(
-                                        ) this package"
-                if ( $hostResponse -like "y" ) {
-                    $_.Version = $Matches.Version
-                    $versionsCoparison = @($_.Version, $_.AvailableVersion) | 
-                    Sort-Object -Descending
-                    if ( $_.Version -eq $_.AvailableVersion -or `
-                    $versionsCoparison[0] -eq $_.Version) {
-                        Write-Host "There is no need to update $($_.Name). Omitting the package."
-                    } else { $okList += $_ }
-                } else { $unknownVer += $_ }
-            } else {
-                Write-Host "Installed ($($_.Version)) and available version ($(
-                            $_.AvailableVersion)) formats for package $(
-                            $_.Name) are different."
-                $unknownList += $_
-            }
-        } else { $okList += $_ }
-    } -End {
-    return $okList, $noList, $unknownVer
-    }
+
+    param (
+        [string]$type = '-',
+        [int]$number = $host.UI.RawUI.BufferSize.Width,
+        [string]$color = 'Green',
+        [switch]$allowMultiLines
+    )
+$line = ''
+for ( $i = 0; $i -lt $number; $i ++ ) { $line = $line + $type } 
+if ( !$allowMultiLines -and $line -gt $host.UI.RawUI.BufferSize.Width) {
+    $line = $line.Substring(0,$host.UI.RawUI.BufferSize.Width)
+}
+Write-Host $line -ForegroundColor $color
 }
 
 function Get-Answer {
@@ -175,57 +163,6 @@ function Get-Answer {
     return ( $key )
 }
 
-function Write-PackagesStatus {
-    <#
-    .SYNOPSIS
-        Show packages from array and message about their status
-
-    .DESCRIPTION
-        Show the status of packages, that means an array to which the package has been moved by 
-        Split-Result function.
-        It's displayed as follows: "Package/s <array> is/are <message>" or "<message>" 
-        if list is empty.
-    
-    .EXAMPLE
-        Write-PackagesStatus -packagesArray @(Package1, Package2) -secondHalf "fantastic!"
-        "Packages Package1, Package2 are fantastic!"
-
-    .PARAMETER packagesArray
-        Array with list of packages of the same status.
-
-    .PARAMETER secondHalf
-        The string displayed after the package list. It's a status description.
-
-    .PARAMETER emptyMessage
-        The string displayed if the package array is empty
-    #>
-
-    param(
-         [ Parameter(Mandatory) ]
-         $packagesArray,
-         [ Parameter(Mandatory) ]
-         [string]$secondHalf,
-         [ Parameter() ]
-         [string]$emptyMessage = ""
-    )
-    if ( $packagesArray.Count -eq 1 ) {
-        Write-Host "The package " -NoNewline
-        Write-Host $packagesArray[0].Name -ForegroundColor Yellow -NoNewline
-        Write-Host " is $($secondHalf)"
-    } 
-    elseif ( $packagesArray.Count -ne 0) {
-        Write-Host "Packages " -NoNewline
-        for ( $i=0; $i -lt $packagesArray.count; $i++){
-            Write-Host $packagesArray[$i].Name -ForegroundColor Yellow -NoNewline
-            if ( $i -ne $packagesArray.count-1 ) {Write-Host ', ' -NoNewline}
-        }
-        Write-Host " are $($secondHalf)"
-    } 
-    elseif ( $emptyMessage -ne "" ) {
-        Write-Host $emptyMessage
-    }
-}
-
 function Get-IntAnswer {
     <#
     .SYNOPSIS
@@ -233,17 +170,22 @@ function Get-IntAnswer {
         spaces.
 
     .DESCRIPTION
-        Get selected numbers from the options presented to the user. Options are packages that can be manipulated. 
+        Get selected numbers from the options presented to the user.  
         User input must be integers separated by spaces, any other input will be rejected 
         by function.
 
-        This object must be defined in the script before calling this function:
-        $optionList collection of Package objects with Name, ID, Version, AvailableVersion
+    .PARAMETER options
+        an array of item names from which the user can choose
     #>
+
+    param (
+        [ Parameter(Mandatory) ]
+        [ string[] ]$options
+    )
     $i = 0
-    foreach ( $package in $optionsList ) {
+    foreach ( $item in $options ) {
         $i ++
-        Write-Host "[$($i)] $($package.Name)"
+        Write-Host "[$($i)] $($item)"
     }
     $hostSelection = Read-Host @"
 
@@ -261,7 +203,7 @@ Press [ Q ] to return to the menu
             $hostArray = foreach ( $i in $hostArray ) { [Convert]::ToInt32($i) }
         } catch { $wrongInput = $true }
         if ( $wrongInput -eq $false ) {
-            $wrongInput = $hostArray.Where({ $_ -le 0 -or $_ -gt $optionsList.Length},
+            $wrongInput = $hostArray.Where({ $_ -le 0 -or $_ -gt $options.Count},
                 'SkipUntil', 1)
             $wrongInput = [boolean]$wrongInput
         }
@@ -273,60 +215,136 @@ Press [ Q ] to return to the menu
     return $hostArray
 }
 
+function Write-PackagesStatus {
+    <#
+    .SYNOPSIS
+        Show packages from array and message about their status
+
+    .DESCRIPTION
+        Show the status of packages, that means an array to which the package has been moved by 
+        Split-Result function.
+        It's displayed as follows: "Package/s <array> is/are <message>" or "<message>" 
+        if list is empty.
+    
+    .EXAMPLE
+        Write-PackagesStatus -namesArray @(Package1, Package2) -secondHalf "fantastic!"
+        "Packages Package1, Package2 are fantastic!"
+
+    .PARAMETER namesArray
+        Array with list of packages names of the same status.
+
+    .PARAMETER secondHalf
+        The string displayed after the package list. It's a status description.
+
+    .PARAMETER emptyMessage
+        The string displayed if the package array is empty
+    #>
+
+    param(
+         [ Parameter(Mandatory) ]
+         [ AllowNull() ]
+         [string[]]$namesArray,
+         [ Parameter(Mandatory) ]
+         [string]$secondHalf,
+         [ Parameter() ]
+         [string]$emptyMessage = ""
+    )
+    if ( $namesArray.Count -eq 1 ) {
+        Write-Host "The package " -NoNewline
+        Write-Host $namesArray[0] -ForegroundColor Yellow -NoNewline
+        Write-Host " is $($secondHalf)"
+    } 
+    elseif ( $namesArray.Count -ne 0) {
+        Write-Host "Packages " -NoNewline
+        for ( $i=0; $i -lt $namesArray.count; $i++){
+            Write-Host $namesArray[$i] -ForegroundColor Yellow -NoNewline
+            if ( $i -ne $namesArray.count-1 ) {Write-Host ', ' -NoNewline}
+        }
+        Write-Host " are $($secondHalf)"
+    } 
+    elseif ( $emptyMessage -ne "" ) {
+        Write-Host $emptyMessage
+    }
+}
+#endregion UNIVERSAL FUNCTIONS
+
+#region FUNCTIONS SPECIFIED FOR THE SCRIPT
+function Split-Result {
+    <#
+    .SYNOPSIS
+        Split the 'winget upgrade' result into three arrays: okList, noList, unknownVer
+
+    .DESCRIPTION
+        Split the 'winget upgrade' result into three groups: skippable (noList), 
+        unrecognizable (unknownList) and upgradeable (okList) ones. 
+        Also tries to correctly recognize packages with an incorrect format of the installed version.
+
+        These objects must be defined in the script before calling this function:
+        $upgradeList collection, with Package object with Name, ID, Version, AvailableVersion
+        $blacklistPath with location to the blacklist file
+    #>
+    $Script:upgradeList | ForEach-Object -Begin {
+        $okList = @()
+        $noList = @()
+        $unknownVer = @()
+        $toSkip = Get-Content $Script:blacklistPath
+    } -Process {   
+        if ($toSkip -contains $_.Id) { $noList += $_ }
+        elseif ($_.Version -contains "Unknown") { $unknownVer += $_ }
+        elseif ([Math]::Abs($_.Version.Length - $_.AvailableVersion.Length) -gt 1){
+            if (($_.Version.Length - $_.AvailableVersion.Length -gt 0) -and !$quick) {
+                $versionPattern = $_.AvailableVersion -replace "[a-z]",'[a-z]'
+                $versionPattern = $versionPattern -replace "[0-9]",'[0-9]'
+                $versionPattern = $versionPattern -replace "\.",'\.'
+                $_.Version -match "(?<Version>$($versionPattern))" | Out-Null
+                $hostResponse = Read-Host "Is version '$($Matches.Version)' the correct version$(
+                                        ) of $($_.Name) installed? Available version is '$(
+                                        $_.AvailableVersion)'. [ Y ] for Yes, anything else to skip$(
+                                        ) this package"
+                if ( $hostResponse -like "y" ) {
+                    $_.Version = $Matches.Version
+                    $versionsCoparison = @($_.Version, $_.AvailableVersion) | 
+                    Sort-Object -Descending
+                    if ( $_.Version -eq $_.AvailableVersion -or `
+                    $versionsCoparison[0] -eq $_.Version) {
+                        Write-Host "There is no need to update $($_.Name). Omitting the package."
+                    } else { $okList += $_ }
+                } else { $unknownVer += $_ }
+            } else {
+                Write-Host "Installed ($($_.Version)) and available version ($(
+                            $_.AvailableVersion)) formats for package $(
+                            $_.Name) are different."
+                $unknownList += $_
+            }
+        } else { $okList += $_ }
+    } -End {
+    return $okList, $noList, $unknownVer
+    }
+}
+
 function Show-Result {
     <#
     .DESCRIPTION
         It uses the Write-PackagesStatus function to return all the messages needed in this script 
         at once.
     #>
-    Write-PackagesStatus -packagesArray $unknownVer -secondHalf $Script:unknownVerMessage
-    Write-PackagesStatus -packagesArray $noList -secondHalf $Script:noListMessage
-    Write-PackagesStatus -packagesArray $okList -secondHalf $Script:okListMessage `
+    Write-PackagesStatus -namesArray $unknownVer.Name -secondHalf $Script:unknownVerMessage
+    Write-PackagesStatus -namesArray $noList.Name -secondHalf $Script:noListMessage
+    Write-PackagesStatus -namesArray $okList.Name -secondHalf $Script:okListMessage `
     -emptyMessage $Script:emptyListMessage
-}
-
-function Write-Separator {
-    <#
-    .DESCRIPTION
-        Write-Host a colored line made of multipled string.
-
-    .PARAMETER type
-        The string to be multiplied.
-
-    .PARAMETER number
-        Line length.
-
-    .PARAMETER color
-        Line color.
-    .PARAMETER allowMultiLines
-        Don't trim line to the window size
-    #>
-
-    param (
-        [string]$type = '-',
-        [int]$number = $host.UI.RawUI.BufferSize.Width,
-        [string]$color = 'Green',
-        [switch]$allowMultiLines
-    )
-$line = ''
-for ( $i = 0; $i -lt $number; $i ++ ) { $line = $line + $type } 
-if ( !$allowMultiLines -and $line -gt $host.UI.RawUI.BufferSize.Width) {
-    $line = $line.Substring(0,$host.UI.RawUI.BufferSize.Width)
-}
-Write-Host $line -ForegroundColor $color
 }
 
 function Show-UI {
     <#
     .SYNOPSIS
-        It shows the user all the available options that he can choose to manipulate the Skipt blacklist file
+        It shows the user all the available options that he can choose to manipulate the blacklist file
         or the update queue.
 
     .DESCRIPTION
-        It shows the user all the available options that he can choose to manipulate the toSkip blacklist file
+        It shows the user all the available options that he can choose to manipulate the blacklist file
         or the update queue. Options available:
-        - Add the package Id to the toSkip file
-        - Remove package Id from file toSkip
+        - Add the package Id to the blacklist file
+        - Remove package Id from the blacklist
         - Add the excluded packages to the update queue
         - Only this time, skip the package in the queue 
         - Create a new custom upgrade queue
@@ -349,7 +367,7 @@ function Show-UI {
         <Table with upgradable packages>
         ---
         Packages A, B are recognized incorrectly (installed version info).
-        Package C is listed in the toSkip file.
+        Package C is listed in the blacklist file.
         Package D id going to be updated.
         ---
         <a list with options indexed with single letters>
@@ -380,8 +398,8 @@ Write-Separator -type "‾"
 Show-Result
 Write-Separator
 Write-Host @"
-[ B ]    Add the package Id to the toSkip file
-[ W ]    Remove package Id from file toSkip
+[ B ]    Add the package Id to the blacklist file
+[ W ]    Remove package Id from the blacklist
 [ A ]    Add the excluded packages to the update queue
 [ S ]    Only this time, skip the package in the queue 
 [ C ]    Create a new custom upgrade queue
@@ -396,21 +414,21 @@ switch ( $hostResponse.Character ) {
     'b' {
         $optionsList = $Script:upgradeList | Where-Object {$_ -NotIn $noList}
         if ( !$optionsList ) {
-            Write-Host "There are no packages that could be added to the toSkip file."
+            Write-Host "There are no packages that could be added to the blacklist file."
         } else {
-            $hostArray = Get-IntAnswer
+            $hostArray = Get-IntAnswer -options $optionsList.Name
             if ( $hostArray ) {
                 foreach ( $k in $hostArray ) {
-                    Add-Content -Path $Script:toSkipPath -Value $optionsList[$k - 1].Id
+                    Add-Content -Path $Script:blacklistPath -Value $optionsList[$k - 1].Id
                     $toSkip, $noList = @(), @()
-                    $toSkip = Get-Content $Script:toSkipPath
+                    $toSkip = Get-Content $Script:blacklistPath
                     foreach ($package in $Script:upgradeList) {
                         if ($toSkip -contains $package.Id) 
                         { $noList += $package }
                     }
                     $okList = $oklist | Where-Object {$_ -notIn @($optionsList[$k - 1])}
                     if ( $null -eq $okList) { $okList = @() }
-                    Write-Host "Added $($optionsList[$k - 1].Name) to the toSkip file."
+                    Write-Host "Added $($optionsList[$k - 1].Name) to the blacklist file."
                 }
             }
         }
@@ -418,19 +436,19 @@ switch ( $hostResponse.Character ) {
     'w' {
         $optionsList = $noList
         if ( !$optionsList ) {
-            Write-Host "For now, the toSkip file is empty"
+            Write-Host "For now, the blacklist file is empty"
         } else {
-            $hostArray = Get-IntAnswer
+            $hostArray = Get-IntAnswer -options $optionsList.Name
             if ( $hostArray ) {
                 foreach ( $k in $hostArray ) {
-                    Set-Content -Path $Script:toSkipPath -Value (get-content -Path $Script:toSkipPath |
+                    Set-Content -Path $Script:blacklistPath -Value (get-content -Path $Script:blacklistPath |
                     Select-String -SimpleMatch $optionsList[$k - 1].Id -NotMatch)
                     $noList = $nolist | Where-Object {$_ -notIn @($optionsList[$k - 1])}
                     if ( $null -eq $noList) { $noList = @() }
                     if ( $optionsList[$k - 1].Version -ne 'Unknown' ){
                         $okList += @($optionsList[$k - 1])
                     }
-                    Write-Host "Removed $($optionsList[$k - 1].Name) from the toSkip file."
+                    Write-Host "Removed $($optionsList[$k - 1].Name) from the blacklist file."
                 }   
             }
         }
@@ -440,7 +458,7 @@ switch ( $hostResponse.Character ) {
         if ( !$optionsList ) {
             Write-Host "There are no excluded packages"
         } else {
-            $hostArray = Get-IntAnswer
+            $hostArray = Get-IntAnswer -options $optionsList.Name
             if ( $hostArray ) {
                 foreach ( $k in $hostArray ) {
                     $okList += @($optionsList[$k - 1])
@@ -454,7 +472,7 @@ switch ( $hostResponse.Character ) {
         if ( !$optionsList ) {
             Write-Host "There are no upgradeable packages"
         } else {
-            $hostArray = Get-IntAnswer
+            $hostArray = Get-IntAnswer -options $optionsList.Name
             if ( $hostArray ) {
                 foreach ( $k in $hostArray ) {
                     $okList = $oklist | Where-Object {$_ -notin @($optionsList[$k - 1])}
@@ -466,7 +484,7 @@ switch ( $hostResponse.Character ) {
     }
     'c' {
         $optionsList = $Script:upgradeList
-        $hostArray = Get-IntAnswer
+        $hostArray = Get-IntAnswer -options $optionsList.Name
         if ( $hostArray ) {
             $okList = @()
             foreach ($k in $hostArray) {
@@ -483,10 +501,10 @@ switch ( $hostResponse.Character ) {
     }
 }
 }
+#endregion FUNCTIONS SPECIFIED FOR THE SCRIPT
 #endregion FUNCTIONS
 
 #region STARTUP
-Write-Host 'Please wait...'
 
 # window configuration
 $host.UI.RawUI.BufferSize.Width = 120;  $host.UI.RawUI.WindowSize.Width = 120
@@ -506,17 +524,21 @@ if( $OutputEncoding.WindowsCodePage -ne 1200 ) {
     Write-Host "Powershell encoding : ", $OutputEncoding.HeaderName
 } 
 
-# create and read toSkip blacklist file
-$toSkipPath = "~\toSkip.txt"
-if ( !(Test-Path -Path $toSkipPath) ) {
-  New-Item -Path $toSkipPath -ItemType file
+# create and read blacklist file
+if ( $blacklistPath[-1] -in @("\","/")) {
+    $blacklistPath = $blacklistPath + "blacklist.txt"
+}
+
+if ( !(Test-Path -Path $blacklistPath) ) {
+  New-Item -Path $blacklistPath -ItemType file
   Write-Host
-  Write-Host "A 'toSkip' file has been created in " -NoNewline
-  Write-Host $(Resolve-Path -path $toSkipPath) -ForegroundColor Yellow
+  Write-Host "A blacklist file has been created in " -NoNewline
+  Write-Host $(Resolve-Path -path $blacklistPath) -ForegroundColor Yellow
   Read-Host "Add the IDs of packages with a different format for 'version' and $(
             )'available version' to this file"
 }
 
+Write-Host 'Please wait...'
 # internet connection test
 Write-Host -NoNewline  -ForegroundColor Yellow "`rTesting connection...         "
 if ( !( Test-Connection 8.8.8.8 -Count 3 -Quiet ) ) {
@@ -596,14 +618,26 @@ foreach ( $package in $upgradeList) {
 
 #region PREPARING MESSAGES ABOUT PACKAGES STATUSES
 $unknownVerMessage = "recognized incorrectly (installed version info)."
-$noListMessage = "listed in the toSkip file."
+$noListMessage = "listed in the blacklist file."
 $okListMessage = "going to be updated."
 $emptyListMessage = "There are no packages to upgrade."
 #endregion PREPARING MESSAGES ABOUT PACKAGES STATUSES
 
 #region UI
-$okListS, $noListS, $unknownVerS = @(), @(), @()
+<#
+$dummySoftware = [Software]::new()
+$dummySoftware.Name = ''
+$dummySoftware.Id = ''
+$dummySoftware.Version = ''
+$dummySoftware.AvailableVersion = ''
+
+$okListS += $dummySoftware
+$noListS += $dummySoftware
+$unknownVerS += $dummySoftware
+#>
+
 $okListS, $noListS, $unknownVerS = Split-Result
+
 
 if ( !$quick ) {
     Show-UI -okList $okListS -noList $noListS -unknownVer $unknownVerS
@@ -611,17 +645,18 @@ if ( !$quick ) {
 #endregion UI
 
 #region UPGRADE A BATCH OF PACKAGES
-Write-PackagesStatus -packagesArray $okListS -secondHalf $okListMessage -emptyMessage $emptyListMessage
+Write-PackagesStatus -namesArray $okListS.Name -secondHalf $okListMessage -emptyMessage $emptyListMessage
 
 if ( $oklistS.Count -gt 0) {
     Write-Host
     $abort = Read-Host '[ Enter ] to continue, [ Q ] to abort'
     if ( $abort -ne 'q') {
         foreach ($package in $okListS) {
+            $winget = "winget upgrade" + " " + $package.Id + " " + $wingetParam
             $host.UI.RawUI.WindowTitle = "PS Wizget: Updating " + $package.Name
-            Write-Host
-            Write-Host "Updating the $($package.Name) application."
-            & winget upgrade $package.Id -h
+            Write-Host 
+            Write-Host "Updating the $($package.Name) application." -ForegroundColor Yellow
+            & Invoke-Expression $winget
         }
         Write-Host
         Write-Host "All updates completed" -ForegroundColor Yellow
