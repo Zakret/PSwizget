@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.0.13
+.VERSION 1.0.14
 
 .GUID acb8f443-01c8-40b3-9369-c5e6e28548d1
 
@@ -25,8 +25,9 @@
 .EXTERNALSCRIPTDEPENDENCIES
 
 .RELEASENOTES
-    - you can now preselect one of the options avaliable from the menu by adding the Aoption, 
-    Coption or Soption parameter
+    - bug fixed "Parameter set cannot be resolved"
+    - passed path is now tested if file location is really a path and if it exist
+    - Aoption Soption and Coption are now unified under the -option <char>
 
 .PRIVATEDATA
 
@@ -49,9 +50,9 @@
     - quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied)
     - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default
     - blacklistPath <Path> option with custom blacklist file location. Default is "~\toSkip.txt".
-    It doesn't need to be created beforehand
-    - you can preselect one of the options available from the menu by adding the Aoption, 
-    Coption or Soption parameter
+    File doesn't need to be created beforehand
+    - you can preselect one of the options available from the menu by adding the -option parameter
+    with A, C or S argument 
     
     Known issue with Windows Powershell ver. <= 5.1 (desktop):
     Due to the ascii encoding, packages with longer names than 30 chars may corrupt 
@@ -89,28 +90,23 @@
 .PARAMETER wingetParam
     custom parameters to pass to winget. '-h' is set by default.
 
-.PARAMETER Aoption
-    Start with the pre-selected [ C ] custom queue creation.
-
-.PARAMETER Coption
-    Start with the pre-selected [ A ] package addition.
-
-.PARAMETER Soption
-    Start with the pre-selected [ S ] package omission.
+.PARAMETER option
+    Start with the pre-selected option:
+    C custom queue creation.
+    A package addition.
+    S package omission.
 
 #>
 
+[CmdletBinding(DefaultParameterSetName = 'set0')]
 param (
     [string]$blacklistPath = "~\toSkip.txt",
     [string]$wingetParam = "-h",
-    [ parameter(ParameterSetName="set1") ]
+    [ Parameter(ParameterSetName="set1") ]
     [switch]$quick,
-    [ parameter(ParameterSetName="set2") ]
-    [switch]$Aoption,
-    [ parameter(ParameterSetName="set3") ]
-    [switch]$Coption,
-    [ parameter(ParameterSetName="set4") ]
-    [switch]$Soption
+    [ Parameter(ParameterSetName="set2") ]
+    [ ValidateSet( 'a', 's', 'c' ) ]
+    [string]$option
 )
 
 #region FUNCTIONS
@@ -206,10 +202,10 @@ function Get-IntAnswer {
     $i = 0
     foreach ( $item in $options ) {
         $i ++
-        Write-Host "[$($i)] $($item)"
+        Write-Host "[ $($i) ]    $($item)"
     }
+    Write-Separator -number 55
     $hostSelection = Read-Host @"
-
 Select the package indexes to which you want to apply the changes (eg. 1 4). 
 Press [ Q ] to return to the menu
 "@
@@ -429,18 +425,18 @@ Write-Host "Wait 10 sec or press anything else to continue"
 Write-Separator -number 55
 
 $hostResponse = New-Object -TypeName System.Management.Automation.Host.KeyInfo
-if ( $Aoption ) {
+if ( $option -eq 'a' ) {
     Write-Host "Do you want to add one of these packages to the update queue?"
     $hostResponse.Character = "a"
-    $Aoption = $false
-} elseif ( $Coption ) {
+    $option = $false
+} elseif ( $option -eq 'c' ) {
     Write-Host "Please define the update queue:"
     $hostResponse.Character = "c"
-    $Coption = $false
-} elseif ( $Soption ) {
+    $option = $false
+} elseif ( $option -eq 's' ) {
     Write-Host "Do you want to omit any of these packages?"
     $hostResponse.Character = "s"
-    $Soption = $false
+    $option = $false
 } else {
     $hostResponse = Get-Answer -Delay 100
 }
@@ -568,9 +564,27 @@ if( $OutputEncoding.WindowsCodePage -ne 1200 ) {
 } 
 
 # create and read blacklist file
+if ( $blacklistPath -match '\\' ){
+    $fileName = $blacklistPath -replace '^.+\\', ""
+
+} elseif ( $blacklistPath -match '/' ){
+    $fileName = $blacklistPath -replace '^.+/', ""
+} else {
+    Write-Host 'Passed location does not exist!' -ForegroundColor Red
+    return
+}
+if ( $null -ne $fileName ) {
+    $folderPath = $blacklistPath.TrimEnd($fileName)
+    if ( !(Test-Path -Path $folderPath) ) {
+        Write-Host 'Passed location does not exist!' -ForegroundColor Red
+        return
+    }
+}
+
 if ( $blacklistPath[-1] -in @("\","/")) {
     $blacklistPath = $blacklistPath + "blacklist.txt"
 }
+
 
 if ( !(Test-Path -Path $blacklistPath) ) {
   New-Item -Path $blacklistPath -ItemType file
@@ -697,11 +711,11 @@ if ( $oklistS.Count -gt 0) {
         foreach ($package in $okListS) {
             $winget = "winget upgrade" + " " + $package.Id + " " + $wingetParam
             $host.UI.RawUI.WindowTitle = "PS Wizget: Updating " + $package.Name
-            Write-Host 
+            Write-Separator -number 55
             Write-Host "Updating the $($package.Name) application." -ForegroundColor Yellow
             & Invoke-Expression $winget
         }
-        Write-Host
+        Write-Separator -number 55
         Write-Host "All updates completed" -ForegroundColor Yellow
     }
 }
