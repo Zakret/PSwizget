@@ -1,15 +1,14 @@
 # PSwizget
 PowerShell script that allow you to manage the upgrade process with winget. 
 It adds a few more options than 'winget upgrade --all':
-- create a file with the packages you would like to omit
-- add or remove packages from the blacklist file directly from the script
-- automatically omit packages with "unknown" installed version, or when the formats of the installed version and the available version does not match
-- it tries to guess the correct installed version by reading the pattern from the available version
-- manually edit the upgrade queue
-- quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied)
-- wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default
-- blacklistPath <Path> option with custom blacklist file location. Default is "~\toSkip.txt". File doesn't need to be created beforehand
-- you can preselect one of the options available from the menu by adding the -option parameter with A, C or S argument 
+- create a file with the packages you would like to omit;
+- add or remove packages from the blacklist file directly from the script;
+- automatically omit packages with "unknown" installed version, or when the formats of the installed version and the available version formats does not match;
+- it tries to guess the correct installed version by reading the pattern from the available version;
+- manually edit the upgrade queue;
+- quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied);
+- wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default;
+- you can preselect one of the options available from the menu by adding the -option parameter with A, C or S argument.
 
 This is my first powershell script for educational purposes.
 
