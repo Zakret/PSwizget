@@ -8,7 +8,8 @@ It adds a few more options than 'winget upgrade --all':
 - manually edit the upgrade queue;
 - quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied);
 - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default;
-- you can preselect one of the options available from the menu by adding the -option parameter with A, C or S argument.
+- you can preselect one of the options available from the menu by adding the -option parameter with A, C or S argument;
+- you can read the package release notes if this information is provided in the manifest file.
 
 This is my first powershell script for educational purposes.
 

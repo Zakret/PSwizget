@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.0.15-alpha
+.VERSION 1.0.15
 
 .GUID acb8f443-01c8-40b3-9369-c5e6e28548d1
 
@@ -25,8 +25,12 @@
 .EXTERNALSCRIPTDEPENDENCIES
 
 .RELEASENOTES
-    - the package manifest file is downloaded if there is an update for it. 
-    Information about the release notes and the URL for them are retrieved from the manifest file;
+    - once a week, the script checks if there is a new version available on powershellgallery.com
+    and if so, the information is added to the table;
+    - the package's manifest file is downloaded if there is an update for it. 
+    Information about the release notes and the URL for them are retrieved from the manifest file 
+    and can be presented to the user under the [ R ] option;
+    - manifests older than 3 months are deleted at the end of the script;
     - additional files to the script are now placed in the folder;
     - testing the Internet connection can be omitted with the omitNetTest parameter;
     - reformating the table, separators and menu;
@@ -100,6 +104,9 @@
 .PARAMETER idleAnimation
     Add an ASCII animation in the bottom-right corner of the menu. Put the animation in a folder 
     and save all its frames as txt files.
+
+.PARAMETER idleSpeed
+    Specify the animation playback speed. By default it is 1.
 
 .PARAMETER option
     Start with the pre-selected option:
@@ -252,6 +259,7 @@ function Clear-HostRange {
         [Console]::SetCursorPosition(0,($Currentline-1))
     }
 }
+
 function Write-Separator {
     <#
     .DESCRIPTION
@@ -345,7 +353,7 @@ function Get-Answer {
         Waiting time for the function to return False expressed in 0.1s.
         
     .NOTES
-        Code by Every Villain Is Lemons
+        Modified code by Every Villain Is Lemons
         https://stackoverflow.com/a/16965646
 
     #>
@@ -638,7 +646,7 @@ $columnsDivision = @(0.30,0.30,0.20,0.20)
 $List = $Script:upgradeList
 if ($Script:timeForUpdate) { $List += $Script:WizgetInfo}
 $formatedList = $List | Select-Object -Property * `
--ExcludeProperty ManifestURL,ReleaseNotes,ReleaseNotesURL
+-ExcludeProperty ManifestPath,ReleaseNotes,ReleaseNotesURL
 if ( $($columnsDivision | Measure-Object -Sum).sum -ne 1 ) {Write-Error "Wrong division"}
 
 $columnsTitles = $formatedList[0].psobject.properties | Select-Object name
@@ -783,16 +791,36 @@ switch ( $hostResponse.Character ) {
             break
         }
     }
-    { $_ -in 'b', 'w', 'a', 's', 'c'} { 
+    'r' {
+        $optionsList = $Script:upgradeList
+        if ($Script:timeForUpdate) { $optionsList += $Script:WizgetInfo}
+        $hostArray = Get-IntAnswer -options $optionsList.Name
+        if ( $hostArray -notin @('q', $false ) ) {
+            foreach ($k in $hostArray) {
+                Clear-Host
+                Write-Separator -header `
+                    ($optionsList[$k - 1].Name+" - "+$optionsList[$k - 1].Id+" - "+
+                    $optionsList[$k - 1].AvailableVersion) `
+                    -headerColor "White" -length $maxWidth
+                Write-Host $optionsList[$k - 1].ManifestPath
+                If ( !($optionsList[$k - 1].ReleaseNotes -and $optionsList[$k - 1].ReleaseNotesURL)) {
+                    Write-Information "No information about available release."
+                } else {
+                    foreach ($line in $optionsList[$k - 1].ReleaseNotesURL) {Write-Host $line}
+                    foreach ($line in $optionsList[$k - 1].ReleaseNotes) {Write-Host $line}
+                }
+                Write-Separator -length 55
+                Write-Host "Next " -NoNewline
+                If ( $k -eq $hostArray[-1] ) {Read-Host} 
+                else { Read-Host $optionsList[$k].Name }
+            }
+        }
+    }
+    { $_ -in 'b', 'w', 'a', 's', 'c', 'r' } { 
         if ( $hostArray -notin @('q', $false ) ) { Get-Answer -Delay 20 | Out-Null }
         $Script:okListS = $okList
         Show-UI -okList $okList -noList $noList -unknownVer $unknownVer
     }
-    <#
-    'r' {
-
-    }
-    #>
 }
 }
 #endregion FUNCTIONS SPECIFIED FOR THE SCRIPT
@@ -963,9 +991,12 @@ if (!$quick) {[Console]::SetCursorPosition(0,($host.UI.RawUI.CursorPosition.Y-1)
 
 #region FETCHING UPGRADEABLE PACKAGES
 #       FROM WINGET TO COLLECTION OF OBJECT
-#It's not mine code in this region. I found it on stackoverflow some time ago but can't find it now.
-#Temporory no author, no link
-
+<#
+It's not mine code in this region. I found it on stackoverflow some time ago but can't find it now.
+I modified it a bit to use PSCustomObject instead of a class 
+and domnload manifest files from the winget github.
+Temporory no author, no link
+#>
 $upgradeResult = winget upgrade --include-unknown | Out-String
 
 # my fix to this code
@@ -996,14 +1027,16 @@ for ($i = $fl + 1; $i -le $lines.Count; $i++) {
         $version = $line.Substring($versionStart, $availableStart - $versionStart).TrimEnd()
         $available = $line.Substring($availableStart, $sourceStart - $availableStart).TrimEnd()
         #if ( Test-Path -LiteralPath "$($wizgetFolderPath)Manifests\$($id)_[$($available)].yaml" ) {
-        $idSplit = $id -split "\."
+        $idURL = $id -replace "\+",'%2B'
+        $idSlash = $idURL -replace "\.",'/'
         $manifestURL = "https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/"+
-            $id[0].ToString().ToLower()+"/"+$idSplit[0]+"/"+$idSplit[1]+"/"+$available+"/"+$id+".locale.en-US.yaml"
+            $id[0].ToString().ToLower()+"/"+$idSlash+"/"+$available+"/"+$idURL+".locale.en-US.yaml"
+        $manifestPath = "$($wizgetFolderPath)Manifests\$($id)_$($available).yaml"
         try {
-            $manifest = Get-Content -LiteralPath "$($wizgetFolderPath)Manifests\$($id)_$($available).yaml" -ErrorAction Stop
+            $manifest = Get-Content -LiteralPath $manifestPath -ErrorAction Stop
         } catch {
             $manifest = $($webclient.DownloadString($manifestURL))
-            $manifest | Out-File -LiteralPath "$($wizgetFolderPath)Manifests\$($id)_$($available).yaml"
+            $manifest | Out-File -LiteralPath $manifestPath
             $manifest = $manifest.split("`n")
         }
         try{
@@ -1023,7 +1056,7 @@ for ($i = $fl + 1; $i -le $lines.Count; $i++) {
             Id                = $id
             Version           = $version
             AvailableVersion  = $available
-            ManifestURL       = $manifestURL
+            ManifestPath      = $manifestPath
             ReleaseNotes      = $releaseNotes
             ReleaseNotesURL   = $releaseNotesURL
         }
@@ -1070,15 +1103,15 @@ foreach ( $package in $upgradeList) {
 
 $updateMarker = Get-ChildItem -Path "$($wizgetFolderPath)updateMarker" -ErrorAction SilentlyContinue
 if ( $updateMarker ) {
-    if ( $updateMarker.CreationTime -ge (Get-Date).AddDays(-7)) {
-        $timeToCheckForUpdate = $true
+    if ( $updateMarker.LastWriteTime -ge (Get-Date).AddDays(-7)) {
+        $timeToCheckForUpdate = $false
     }
 } else {
     $timeToCheckForUpdate = $true
 }
 
 if ( $timeToCheckForUpdate ) {    
-    $wizgetNewVersion = $(Find-Script $powershellgalleryName).Version
+    $wizgetNewVersion = $(Find-Script $powershellgalleryName)
     try {
         "" | Out-File -FilePath "$($wizgetFolderPath)updateMarker" -ErrorAction SilentlyContinue
     } catch {
@@ -1093,15 +1126,16 @@ if ( $timeToCheckForUpdate ) {
 
 $WizgetInfo = [PSCustomObject]@{
     Name              = "`e[93m$($scriptInfo.Name)"
-    Id                = ""
+    Id                = $wizgetNewVersion.Name
     Version           = $scriptInfo.Version
-    AvailableVersion  = $wizgetNewVersion
-    ReleaseNotes      = $scriptInfo.ReleaseNotes
-    ReleaseNotesURL   = ""
+    AvailableVersion  = $wizgetNewVersion.Version
+    ReleaseNotes      = $wizgetNewVersion.ReleaseNotes
+    ReleaseNotesURL   = "https://www.powershellgallery.com/packages/PSWizget/"
 }
 
-if ($(@($WizgetInfo.Version,  $WizgetInfo.AvailableVersion) | Sort-Object -Descending)[0] `
-   -ne $WizgetInfo.Version) {
+if ( $WizgetInfo.AvailableVersion -and `
+    ($(@($WizgetInfo.Version,  $WizgetInfo.AvailableVersion) | Sort-Object -Descending)[0] `
+   -ne $WizgetInfo.Version)) {
     $timeForUpdate = $true
 }
 
@@ -1143,7 +1177,16 @@ if ( $oklistS.Count -gt 0) {
         Write-Information "All updates completed" -InformationAction Continue
     }
 }
+#endregion UPGRADE A BATCH OF PACKAGES
 
 Reset-Setup
-#endregion UPGRADE A BATCH OF PACKAGES
+
+#region DELETION OF OLD MANIFESTS
+$manifests = Get-ChildItem -Path "$($wizgetFolderPath)Manifests\*.yaml" -ErrorAction SilentlyContinue
+foreach ($yaml in $manifests) {
+    if ($yaml.CreationTime -le (Get-Date).AddMonths(-3)){
+        Remove-Item -LiteralPath ($($wizgetFolderPath)+"Manifests\"+$yaml.Name)
+    }
+}
+#endregion DELETION OF OLD MANIFESTS
 }
