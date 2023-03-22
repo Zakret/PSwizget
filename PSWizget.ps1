@@ -60,7 +60,8 @@
     - quick mode (it's similar to 'winget upgrade --all' but with a blacklist applied);
     - wingetParam <string> option with custom parameters to pass to winget. '-h' is set by default;
     - you can preselect one of the options available from the menu by adding the -option parameter
-    with A, C or S argument.
+    with A, C or S argument;
+    - you can read the package release notes if this information is provided in the manifest file.
     
     Known issue with Windows Powershell ver. <= 5.1 (desktop):
     Due to the ascii encoding, packages with longer names than 30 chars may corrupt 
@@ -121,7 +122,7 @@
 [CmdletBinding(DefaultParameterSetName = 'set0')]
 param (
     [Parameter(Position=2)]
-    [string]$wizgetFolderPath = "~\Wizget\",
+    [string]$wizgetFolderPath = "$($HOME)\Wizget\",
     [Parameter(Position=3)]
     [string]$wingetParam = "-h",
     [switch]$omitNetTest,
@@ -802,8 +803,8 @@ switch ( $hostResponse.Character ) {
                     ($optionsList[$k - 1].Name+" - "+$optionsList[$k - 1].Id+" - "+
                     $optionsList[$k - 1].AvailableVersion) `
                     -headerColor "White" -length $maxWidth
-                Write-Host $optionsList[$k - 1].ManifestPath
-                If ( !($optionsList[$k - 1].ReleaseNotes -and $optionsList[$k - 1].ReleaseNotesURL)) {
+                Write-Host $("file://$($optionsList[$k - 1].ManifestPath)" -replace "\\", "/")
+                If ( !($optionsList[$k - 1].ReleaseNotes -or $optionsList[$k - 1].ReleaseNotesURL)) {
                     Write-Information "No information about available release."
                 } else {
                     foreach ($line in $optionsList[$k - 1].ReleaseNotesURL) {Write-Host $line}
@@ -872,7 +873,7 @@ if ($idleAnimation){
 if ( !$PSBoundParameters.idleSpeed ) { $PSBoundParameters.idleSpeed = 1 }
 
 # create and read files from profile directory
-$invalidChar = '[^"<>*|?:]'
+$invalidChar = '[^"<>*|?]'
 $test = "^"+$invalidChar+"+$"
 if ( $wizgetFolderPath -notmatch $test ) {
     Write-Error 'The passed string is not a location!'
@@ -1040,12 +1041,12 @@ for ($i = $fl + 1; $i -le $lines.Count; $i++) {
             $manifest = $manifest.split("`n")
         }
         try{
-            $startLine = $($manifest | Select-String -Pattern '^\s*ReleaseNotes:')[0].LineNumber-1
-            $endLine = $($manifest | Select-String -Pattern '^\s*(ReleaseNotesURL:)|(ManifestType:)')[0].LineNumber-2
+            $startLine = $($manifest | Select-String -Pattern '^[a-z0-9 ]*ReleaseNotes:')[0].LineNumber-1
+            $endLine = $($manifest | Select-String -Pattern '^[a-z0-9 ]*(ReleaseNotesURL:)|(ManifestType:)')[0].LineNumber-2
             $releaseNotes = $manifest[$startLine..$endLine]
         } catch { $releaseNotes = @("") }
         try {
-            $releaseNotesURL = $($manifest | Select-String -Pattern '^\s*ReleaseNotesURL:.*$')[0]
+            $releaseNotesURL = $($manifest | Select-String -Pattern '^[a-z0-9 ]*ReleaseNotesURL:.*$')[0]
         } catch { $releaseNotesURL = @("") }
         
         if ( !$releaseNotes ) { $releaseNotes = @("") }
